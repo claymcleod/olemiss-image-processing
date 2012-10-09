@@ -1,0 +1,304 @@
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+	<head>
+		<meta name="description" content="Texture From Webcam Video" />
+		<meta name="author" content="Jianxia Xue" />
+		<title>Experiment using getUserMedia</title>
+	</head>
+	<body>
+		
+		<script src="dat.gui.min.js"></script>
+		<script src="Three.js"></script>
+		<script src="Detector.js"></script>
+
+		<script id="shader-vs" type="x-shader/x-vertex">
+			varying vec2 vTextureCoord;
+			uniform float uFisheyeDistortion;
+
+			void main(void) {
+
+			const float pi = 3.14159265*10.;
+			vec3 pos = position;
+
+			gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.);
+
+			vec2 uvc = uv-.5;
+			float r = (uvc.x*uvc.x+uvc.y*uvc.y)*uFisheyeDistortion;
+			vTextureCoord = uv + uvc * r;
+
+			//vTextureCoord = uv;
+
+			}
+		</script>
+		<script id="shader-fs" type="x-shader/x-fragment">
+			uniform sampler2D uVideo;
+			uniform vec2 uSegments;
+			uniform float uBlend;
+
+			varying vec2 vTextureCoord;
+
+			// sobel filter
+			void main(void)	{
+
+			vec2 vST = vTextureCoord;
+			if ( any(greaterThan(vST, vec2(1.,1.))) ) {
+			gl_FragColor = vec4(0.,0.,0.,0.);
+			return;
+			}
+
+			if ( any(lessThan(vST, vec2(0.,0.))) ) {
+			gl_FragColor = vec4(0.,0.,0.,0.);
+			return;
+			}
+
+			vec2 res = vec2(960., 600.);
+
+			vec2 deltaS = vec2(1./res.s, 0.);
+			vec2 deltaT = vec2(0., 1./res.t);
+			vec2 deltaD = deltaS+deltaT;
+			vec2 deltaO = deltaS-deltaT;
+
+			const vec3 W = vec3(.2125, .7154, .0721);
+			float i00 = dot( texture2D( uVideo, vST-deltaD).rgb, W );
+			float i01 = dot( texture2D( uVideo, vST-deltaT).rgb, W );
+			float i02 = dot( texture2D( uVideo, vST+deltaO).rgb, W );
+
+			float i10 = dot( texture2D( uVideo, vST-deltaS).rgb, W );
+			float i11 = dot( texture2D( uVideo, vST       ).rgb, W );
+			float i12 = dot( texture2D( uVideo, vST+deltaS).rgb, W );
+
+			float i20 = dot( texture2D( uVideo, vST-deltaO).rgb, W );
+			float i21 = dot( texture2D( uVideo, vST+deltaT).rgb, W );
+			float i22 = dot( texture2D( uVideo, vST+deltaD).rgb, W );
+
+			float h = i20-i00 + 2.*(i21-i01) + i22-i02;
+			float v = i02-i00 + 2.*(i12-i10) + i22-i20;
+
+			float mag = length( vec2(h, v) );
+			vec3 irgb = texture2D( uVideo, vST ).rgb;
+
+			gl_FragColor = vec4( irgb*(1.-uBlend)+(1.-vec3(mag, mag, mag))*(uBlend), 1.);
+
+			}
+		</script>
+		
+		<!-- getUserMedia -->
+		<script type="text/javascript">
+		
+		<!-- instantiation of WebCam --!>
+			var WebCamVideo = function() {
+				this.video = document.createElement('video');
+				this.video.autoplay = "autoplay";
+				this.video.width = this.video.height = 100;
+				this.video.style.display = "none";
+				this.video.webkitTransitionProperty = "opacity";
+				this.video.webkitTransitionDuration = "2s";
+
+				document.body.appendChild(this.video);
+				console.log("video size: "+this.video.width+", "+this.video.height);
+				this.getUserMedia();
+				return this;
+			}
+
+			WebCamVideo.prototype.getUserMedia = function() {
+				var _this = this;
+				navigator.webkitGetUserMedia({
+					audio : true,
+					video : true
+				},
+				// event on streaming success
+				function(stream) {
+					var url = webkitURL.createObjectURL(stream);
+					_this.video.src = url;
+					_this.loaded = true;
+					console.log("User has granted access to local media");
+				},
+				// event on streaming failure
+				function(error) {
+					_this.loaded = false;
+					alert("Failed to get access to local media. Error code was " + error.code);
+				});
+			}
+		</script>
+		<!-- ToyCam -->
+		<script type="text/javascript">
+			var ToyCam = function(video) {
+				this.blend = 0.5;
+				this.fisheye = 0.5;
+				this.segments = [160, 100];
+				this.shape = 'plane';
+
+				this.video = video;
+
+				this.build();
+				this.buildGUI();
+				return this;
+			};
+
+			ToyCam.prototype.updateVideo = function() {
+				var vt = this.videoTexture;
+				if (vt.image.readyState === vt.image.HAVE_ENOUGH_DATA) {
+					vt.needsUpdate = true;
+				}
+				return this;
+			}
+
+			ToyCam.prototype.build = function() {
+				this.buildGeometry();
+				this.buildMaterial();
+				
+				this.updateScene();
+				return this.scene;
+			}
+
+			ToyCam.prototype.buildMaterial = function() {
+				this.videoTexture = new THREE.Texture(this.video);
+				this.videoTexture.needsUpdate = true;
+				
+				this.uniforms = {
+					uFisheyeDistortion : {
+						type : "f",
+						value : this.fisheye
+					},
+					uVideo : {
+						type : "t",
+						value : 1,
+						texture : this.videoTexture
+					},
+					uSegments : {
+						type : "v2",
+						value : this.segments
+					},
+					uBlend : {
+						type : "f",
+						value : this.blend
+					}
+				};
+				
+				this.material = new THREE.ShaderMaterial({
+					uniforms : this.uniforms,
+					vertexShader : document.querySelector('#shader-vs').textContent,
+					fragmentShader : document.querySelector('#shader-fs').textContent
+				});
+
+				return this.material;
+			}
+
+			ToyCam.prototype.buildGeometry = function() {
+				var s = this.segments;
+				if (this.shape == 'plane') {
+					this.geometry = new THREE.PlaneGeometry(1.6, 1, 160, 100);
+					this.geometry.applyMatrix(new THREE.Matrix4(-1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1));
+				} else
+					this.geometry = new THREE.SphereGeometry(0.5, s[0], s[1]);
+				return this.geometry;
+			}
+
+			ToyCam.prototype.updateScene = function() {
+				if (this.scene)
+					this.scene.remove(this.mesh);
+				else
+					this.scene = new THREE.Scene();	
+				this.mesh = new THREE.Mesh(this.geometry, this.material);
+				this.mesh.doubleSided = true;
+				this.scene.add(this.mesh);
+			}
+
+			ToyCam.prototype.buildGUI = function() {
+				var gui = new dat.GUI();
+				_this = this;
+				gui.add(_this, 'blend', 0, 1).onChange(function(value) {
+					_this.material.uniforms.uBlend.value = value;
+					_this.material.needsUpdate = true;
+				});
+				gui.add(_this, 'fisheye', -20, 20).onChange(function(value) {
+					_this.material.uniforms.uFisheyeDistortion.value = value;
+					_this.material.needsUpdate = true;
+				});
+				gui.add(_this, 'shape', ['sphere', 'plane']).onChange(function(value){
+					_this.shape = value;
+					_this.build();
+				});
+				return gui;
+			}
+
+		</script>
+
+		<script type="text/javascript">
+			var __bind = function(fn, me) {
+				return function() {
+					return fn.apply(me, arguments);
+				};
+			};
+
+			/** ToyCamApp */
+			var ToyCamApp = function() {
+				this.animate = __bind(this.animate, this);
+				this.render = __bind(this.render, this);
+
+				this.webcamVideo = new WebCamVideo('video');
+
+				if (this.webcamVideo == null)
+					return null;
+
+				if (this.init() == true)
+					this.animate();
+			}
+
+			ToyCamApp.prototype.init = function() {
+				var _this = this;
+				console.log(this.webcamVideo);
+				if (!Detector.webgl) {
+					Detector.addGetWebGLMessage();
+					return false;
+				}
+				if (this.webcamVideo.loaded == false)
+					return false;
+
+				this.renderer = new THREE.WebGLRenderer({
+					antialias : true, // to get smoother output
+					preserveDrawingBuffer : true	// to allow screenshot
+				});
+				this.renderer.setSize(window.innerWidth, window.innerHeight);
+				this.renderer.setClearColorHex(0x000000, 1);
+				
+				this.camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 10);
+				this.camera.position.set(0, 0, 2);
+
+				this.toycam = new ToyCam(this.webcamVideo.video);
+				console.log(this.toycam);
+
+				this.scene = this.toycam.scene;
+				
+				this.cameraControls = new THREE.TrackballControls(this.camera, this.renderer.domElement);
+				this.cameraControls.target.set(0, 0, 0);
+
+				document.body.appendChild(this.renderer.domElement);
+
+				window.addEventListener('resize', function(e) {
+					_this.camera.aspect = window.innerWidth / window.innerHeight;
+					_this.camera.updateProjectionMatrix();
+					return _this.renderer.setSize(window.innerWidth, window.innerHeight);
+				});
+
+				return true;
+			};
+
+			// animation loop
+			ToyCamApp.prototype.animate = function() {
+				requestAnimationFrame(this.animate);
+				return this.render();
+			};
+
+			// render the scene
+			ToyCamApp.prototype.render = function() {
+				this.cameraControls.update();
+				this.toycam.updateVideo();
+				return this.renderer.render(this.scene, this.camera);
+			};
+
+			new ToyCamApp();
+		</script>
+	</body>
+</html>
