@@ -17,23 +17,15 @@
 		<link rel="shortcut icon" href="/favicon.ico" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 	</head>
-
-	<script src="/MASL/lib/edu/olemiss/convolution/Filter.js"></script>
 	
 	<body>
 		<div>
 			<header>
-				<h1>Filter</h1>
+				<h1>Filter Example</h1>
 			</header>
-	
-			<nav>
-				<p>
-					<a href="/">Home</a>
-				</p>
-				<p>
-					<a href="/contact">Contact</a>
-				</p>
-			</nav>
+			
+			<input type="file" id="files" name="files[]" multiple />
+			<output id="list"></output>
 
 			<div>
 
@@ -46,4 +38,10 @@
 			</footer>
 		</div>
 	</body>
+	
+	<script type="text/javascript">
+		document.getElementById('files').addEventListener('change', handleFileSelect, false);
+	</script>
+	
+	<script type="text/javascript" src="/ImageProcessing/lib/edu/olemiss/convolution/Filter.js"></script>	
 </html>
