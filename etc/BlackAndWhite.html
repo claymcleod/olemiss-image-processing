@@ -34,29 +34,15 @@
 		</script>
 		<script id="shader-fs" type="x-shader/x-fragment">
 			uniform sampler2D uVideo;
+			uniform sampler2D uFilterTexture;
+			uniform int uFheight;
+			uniform int uFwidth;
 			uniform vec2 uSegments;
-			uniform float uBlend;
-
-			/* Remember! Matrix is by columns, not rows
-			
-			mat3( A, B, C, 
-				  A, B, C, 
-				  A, B, C);
-			
-			[A, A, A]
-			[B, B, B]
-			[C, C, C]
-			
-			*/
-			mat3 filter = mat3( 1.0, 0.0, -1.0, 
-						   		1.0, 0.0, -1.0, 
-					       		1.0, 0.0, -1.0);
 										  
 			varying vec2 vTextureCoord;
 
 			void main(void)	{
-
-			//checks
+			
 			vec2 vST = vTextureCoord;
 			if ( any(greaterThan(vST, vec2(1.,1.))) ) {
 			gl_FragColor = vec4(0.,0.,0.,0.);
@@ -73,70 +59,32 @@
 			vec2 res = vec2(960., 600.);
 			vec2 deltaS = vec2(1./res.s, 0.);
 			vec2 deltaT = vec2(0., 1./res.t);
-			vec2 deltaD = deltaS+deltaT;
-			vec2 deltaO = deltaS-deltaT;
 
-			//arbitrary greyscale const
-			const vec3 W = vec3(.2125, .7154, .0721);
+		/**
+`			vec2 filter_s = vec2(0.2, 0.0); 
+			vec2 filter_t = vec2(0.0, 0.2); 
+			**/
+	
+			vec4 sum = vec4(0.,0.,0.,0.);
 			
-			//adjusting values from [0, 0] to [2, 2] (greyscale applied)
-			float i00 = dot( texture2D( uVideo, vST-deltaD).rgb, W );
-			float i01 = dot( texture2D( uVideo, vST-deltaT).rgb, W );
-			float i02 = dot( texture2D( uVideo, vST+deltaO).rgb, W );
+			for(float r = 0.0; r < 5.0; r++) { //row
+				for(float c = 0.0; c < 5.0; c++) { //column 
+					float filter_delta = ((vec2(0.2, 0.0) * r) + (vec2(0.0, 0.2) * c));
+					vec4 weight = texture2D(uFilterTexture, filter_delta); // obtain weight of pixel
+					float curr_delta = ((deltaS * (c-2.)) + (deltaT * (r-2.))); //width, height
+					vec4 video_weight = texture2D(uVideo, vST+curr_delta).rgba); 
+					sum += weight * video_weight; 
+				}
+			}
 
-			float i10 = dot( texture2D( uVideo, vST-deltaS).rgb, W );
-			float i11 = dot( texture2D( uVideo, vST       ).rgb, W );
-			float i12 = dot( texture2D( uVideo, vST+deltaS).rgb, W );
-
-			float i20 = dot( texture2D( uVideo, vST-deltaO).rgb, W );
-			float i21 = dot( texture2D( uVideo, vST+deltaT).rgb, W );
-			float i22 = dot( texture2D( uVideo, vST+deltaD).rgb, W );
+			gl_FragColor = sum;
 			
-			
-			// Greyscale matrix modelled horizontally
-			mat3 unmodified_h = mat3( i00, i10, i20,
-									  i01, i11, i21,
-									  i02, i12, i22);
-									  
-			
-			// Greyscale matrix modelled vertically
-			mat3 unmodified_v = mat3( i02, i01, i00,
-									  i12, i11, i10,
-									  i22, i21, i20);									  
-			
-			/*
-			
-			The following code is the main algorithm for applying
-			any given filter "filter".
-			
-			The algorithm involves the addition of dot products of
-			each column & row. 
-			
-			*/
-			
-			float h = dot(unmodified_h[0], filter[0]) +
-					  dot(unmodified_h[1], filter[1]) +
-					  dot(unmodified_h[2], filter[2]);
-			
-			
-			float v = dot(unmodified_v[0], filter[0]) +
-					  dot(unmodified_v[1], filter[1]) +
-					  dot(unmodified_v[2], filter[2]);
-
-			//Combined weight of horizontal and vertical analyzation
-			
-			float mag = length( vec2(h, v) );
-			vec3 irgb = texture2D( uVideo, vST ).rgb;
-
-			gl_FragColor = vec4( irgb*(1.-uBlend)+(1.-vec3(mag, mag, mag))*(uBlend), 1.);
-
 			}
 		</script>
 		
 		<!-- getUserMedia -->
 		<script type="text/javascript">
 		
-		<!-- instantiation of WebCam --!>
 			var WebCamVideo = function() {
 				this.video = document.createElement('video');
 				this.video.autoplay = "autoplay";
@@ -171,14 +119,42 @@
 				});
 			}
 		</script>
+
 		<!-- ToyCam -->
 		<script type="text/javascript">
+				
+			var fwidth = 0;
+			var fheight = 0;
+			var filterTexture;
+			var filterLoaded = false;
+			
+			function setFilter(w, h) {
+				fwidth = w;
+				fheight = h;
+			}
+			
 			var ToyCam = function(video) {
+			
+				/** Passing Images as texture **/
+				
+				var image = new Image();
+				image.onload = function() {
+					setFilter(this.width, this.height);
+					console.log("SetFilter(): "+this.width+"x"+this.height);
+				}
+				image.onerror = function() {
+					alert("Error occured in loading image!");
+				}
+				image.src = 'haar.jpg';
+				
+				filterTexture = THREE.ImageUtils.loadTexture(image.src); //new THREE.Texture(image);
+				filterTexture.needsUpdate = true;
+				
 				this.blend = 0.5;
 				this.fisheye = 0.5;
 				this.segments = [160, 100];
 				this.shape = 'plane';
-
+				
 				this.video = video;
 
 				this.build();
@@ -201,11 +177,10 @@
 				this.updateScene();
 				return this.scene;
 			}
-
+			
 			ToyCam.prototype.buildMaterial = function() {
 				this.videoTexture = new THREE.Texture(this.video);
 				this.videoTexture.needsUpdate = true;
-				
 				this.uniforms = {
 					uFisheyeDistortion : {
 						type : "f",
@@ -223,6 +198,19 @@
 					uBlend : {
 						type : "f",
 						value : this.blend
+					},
+					uFilterTexture: {
+						type: "t",
+						value: 1,
+						texture : filterTexture
+					},
+					uFwidth: {
+						type: "i",
+						value: fwidth
+					},
+					uFheight: {
+						type: "i",
+						value: fheight
 					}
 				};
 				
@@ -272,7 +260,6 @@
 				});
 				return gui;
 			}
-
 		</script>
 
 		<script type="text/javascript">
@@ -291,7 +278,6 @@
 
 				if (this.webcamVideo == null)
 					return null;
-
 				if (this.init() == true)
 					this.animate();
 			}
