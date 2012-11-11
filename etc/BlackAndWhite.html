@@ -69,18 +69,22 @@
 			
 			float s_factor = floor((uFwidth - 1.0)/2.0);
 			float t_factor = floor((uFheight - 1.0)/2.0);
-			for(float r = 0.0; r < 1.0; (r += 1./uFwidth)) { //row
-				for(float c = 0.0; c < 1.0; (c += 1./uFheight)) { //column 
-					vec2 filter_delta = (filter_s * (r * uFwidth)) + (filter_t * (c * uFheight));
+			
+			for(float r = 0.0; r < 99999.0; r++) { //row
+			if(r >= uFwidth) break;
+			
+				for(float c = 0.0;c < 99999.0; c++) { //column 
+				if(c >= uFheight) break;
+						
+					vec2 filter_delta = (filter_s * r) + (filter_t * c);
 					vec4 weight = texture2D(uFilterTexture, filter_delta); // obtain weight of pixel
 					weight_sum += weight;
-					vec2 curr_delta = ((deltaS * ((c * uFheight)-(s_factor))) + (deltaT * ((r * uFwidth)-(t_factor)))); //width, height
+					vec2 curr_delta = ((deltaS * (c-(s_factor))) + (deltaT * (r-(t_factor)))); //width, height
 					vec4 video_weight = texture2D(uVideo, vST+curr_delta).rgba; 
 					sum += weight * video_weight; 
 				}
 			}
-
-			gl_FragColor = floor(sum/weight_sum);
+			gl_FragColor = sum/weight_sum;
 			
 			}
 		</script>
@@ -204,7 +208,7 @@
 					},
 					uFilterTexture: {
 						type: "t",
-						value: 1,
+						value: 2,
 						texture : filterTexture
 					},
 					uFwidth: {
