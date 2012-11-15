@@ -70,6 +70,7 @@
 			float s_factor = floor((uFwidth - 1.0)/2.0);
 			float t_factor = floor((uFheight - 1.0)/2.0);
 			
+			
 			for(float r = 0.0; r < 99999.0; r++) { //row
 			if(r >= uFwidth) break;
 			
@@ -84,7 +85,8 @@
 					sum += weight * video_weight; 
 				}
 			}
-			gl_FragColor = sum/weight_sum;
+			
+			gl_FragColor = sum/(weight_sum);
 			
 			}
 		</script>
@@ -213,11 +215,11 @@
 					},
 					uFwidth: {
 						type: "f",
-						value: 0
+						value: 5
 					},
 					uFheight: {
 						type: "f",
-						value: 0
+						value: 5
 					}
 				};
 				
